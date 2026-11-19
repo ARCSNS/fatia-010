@@ -53,30 +53,88 @@ footer{background:#180505;color:#f7e9df;padding:30px 22px;text-align:center}foot
  <div class="drawerhead"><h2>Seu pedido</h2><button class="close" onclick="closeCart()">×</button></div>
  <div class="cartitems" id="cartitems"><div class="empty">Seu carrinho está vazio.</div></div>
  <div class="total"><span>Total</span><span id="total">R$ 0,00</span></div>
- <div class="checkout"><input id="customer" placeholder="Seu nome"><input id="phone" placeholder="Telefone para contato"><select id="neighborhood"><option value="">Bairro de entrega</option><option>Monte das Oliveiras</option><option>Colônia Terra Nova</option></select><input id="address" placeholder="Rua, número e complemento"><select id="payment"><option value="">Forma de pagamento</option><option>Pix</option><option>Dinheiro</option><option>Cartão</option></select><textarea id="notes" rows="2" placeholder="Observações: informe os sabores dos combos, troco e outros detalhes (opcional)"></textarea><button onclick="sendOrder()">Finalizar pelo WhatsApp</button><small style="color:#87766e">Também estamos preparando a opção de finalizar diretamente pelo site.</small></div>
+ <div class="checkout"><input id="customer" placeholder="Seu nome"><input id="phone" placeholder="Telefone para contato"><select id="neighborhood"><option value="">Bairro de entrega</option><option>Monte das Oliveiras</option><option>Colônia Terra Nova</option></select><input id="address" placeholder="Rua, número e complemento"><select id="payment"><option value="">Forma de pagamento</option><option>Pix</option><option>Dinheiro</option><option>Cartão</option></select><textarea id="notes" rows="2" placeholder="Observações: informe os sabores dos combos, troco e outros detalhes (opcional)"></textarea><button onclick="sendOrder()">Finalizar pedido</button><small style="color:#87766e">Seu pedido será registrado diretamente no sistema da FATIA 010.</small></div>
 </div></div>
 <script>
-const products=[
-{id:1,name:"Pizza G Calabresa & Cheddar",cat:"Pizzas",desc:"Pizza grande.",price:38.00,emoji:"🍕"},
-{id:2,name:"Pizza G Portuguesa",cat:"Pizzas",desc:"Pizza grande.",price:38.00,emoji:"🍕"},
-{id:3,name:"Pizza G Muçarela",cat:"Pizzas",desc:"Pizza grande.",price:38.00,emoji:"🍕"},
-{id:4,name:"Pizza G Frango com Catupiry",cat:"Pizzas",desc:"Pizza grande.",price:40.00,emoji:"🍕"},
-{id:5,name:"Pizza M Calabresa & Cheddar",cat:"Pizzas",desc:"Pizza média.",price:28.90,emoji:"🍕"},
-{id:6,name:"Pizza M Portuguesa",cat:"Pizzas",desc:"Pizza média.",price:28.90,emoji:"🍕"},
-{id:7,name:"Pizza M Muçarela",cat:"Pizzas",desc:"Pizza média.",price:28.90,emoji:"🍕"},
-{id:8,name:"Pizza M Frango com Catupiry",cat:"Pizzas",desc:"Pizza média.",price:30.00,emoji:"🍕"},
-{id:9,name:"Combo 01 – Casal",cat:"Combos",desc:"1 Pizza M (30 cm) + 1 refrigerante de 1,5 L. Sabores à escolha; informe nas observações.",price:45.00,emoji:"🎁"},
-{id:10,name:"Combo 02 – Fome Zero",cat:"Combos",desc:"1 Pizza G + 3 brotinhos + 1 Coca-Cola de 1 litro. Sabores à escolha; informe nas observações.",price:50.00,emoji:"🎁"},
-{id:11,name:"Combo 03 – Família",cat:"Combos",desc:"2 Pizzas G Família, sabores à escolha. Sem refrigerante; informe os sabores nas observações.",price:68.00,emoji:"🎁"}
-]
+const API_URL='https://fatia-010-api.onrender.com';
+let products=[];
 let cart={};
-const money=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-function renderProducts(cat='Todos'){document.getElementById('products').innerHTML=products.filter(p=>cat==='Todos'||p.cat===cat).map(p=>`<article class="item"><div class="foodpic">${p.emoji}</div><div class="itembody"><h3>${p.name}</h3><p>${p.desc}</p><div class="itemfoot"><span class="price">${money(p.price)}</span><button class="add" onclick="add(${p.id})">+ Adicionar</button></div></div></article>`).join('')}
+let neighborhoods=[];
+let paymentMethods=[];
+const money=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+async function loadCatalog(){
+  try{
+    const [catalogRes, neighborhoodsRes, paymentsRes]=await Promise.all([
+      fetch(`${API_URL}/api/catalog`),
+      fetch(`${API_URL}/api/neighborhoods`),
+      fetch(`${API_URL}/api/payment-methods`)
+    ]);
+    if(!catalogRes.ok||!neighborhoodsRes.ok||!paymentsRes.ok) throw new Error('Não foi possível carregar os dados da pizzaria.');
+    const catalog=await catalogRes.json();
+    neighborhoods=await neighborhoodsRes.json();
+    paymentMethods=await paymentsRes.json();
+    products=catalog.products.map(p=>({
+      id:Number(p.id),name:p.name,cat:(catalog.categories.find(c=>Number(c.id)===Number(p.category_id))||{}).name||'Outros',
+      desc:p.description||'',price:Number(p.price),emoji:(p.name.toLowerCase().includes('combo')?'🎁':'🍕')
+    }));
+    const neighborhoodSelect=document.getElementById('neighborhood');
+    neighborhoodSelect.innerHTML='<option value="">Bairro de entrega</option>'+neighborhoods.map(n=>`<option value="${n.id}">${n.name}</option>`).join('');
+    const paymentSelect=document.getElementById('payment');
+    paymentSelect.innerHTML='<option value="">Forma de pagamento</option>'+paymentMethods.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+    renderProducts();renderCart();
+  }catch(error){
+    console.error(error);
+    document.getElementById('products').innerHTML='<p>Não foi possível carregar o cardápio agora. Atualize a página em alguns instantes.</p>';
+    alert('Não foi possível conectar ao cardápio da FATIA 010. Tente atualizar a página.');
+  }
+}
+function renderProducts(cat='Todos'){
+  const visible=products.filter(p=>cat==='Todos'||p.cat.toLowerCase()===cat.toLowerCase());
+  document.getElementById('products').innerHTML=visible.map(p=>`<article class="item"><div class="foodpic">${p.emoji}</div><div class="itembody"><h3>${p.name}</h3><p>${p.desc}</p><div class="itemfoot"><span class="price">${money(p.price)}</span><button class="add" onclick="add(${p.id})">+ Adicionar</button></div></div></article>`).join('');
+}
 function filter(cat,el){document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderProducts(cat)}
 function add(id){cart[id]=(cart[id]||0)+1;renderCart()}
 function change(id,d){cart[id]=(cart[id]||0)+d;if(cart[id]<=0)delete cart[id];renderCart()}
-function renderCart(){let entries=Object.entries(cart);let count=entries.reduce((s,[,q])=>s+q,0);let total=entries.reduce((s,[id,q])=>s+products.find(p=>p.id==id).price*q,0);document.getElementById('count').textContent=count;document.getElementById('total').textContent=money(total);document.getElementById('cartitems').innerHTML=entries.length?entries.map(([id,q])=>{let p=products.find(x=>x.id==id);return `<div class="cartrow"><div><b>${p.name}</b><small>${money(p.price)} cada</small></div><div class="qty"><button onclick="change(${id},-1)">−</button><b>${q}</b><button onclick="change(${id},1)">+</button></div></div>`}).join(''):'<div class="empty">Seu carrinho está vazio.</div>'}
-function openCart(){document.getElementById('overlay').classList.add('open')}function closeCart(){document.getElementById('overlay').classList.remove('open')}
-function sendOrder(){let entries=Object.entries(cart);if(!entries.length){alert('Adicione pelo menos um produto ao carrinho.');return}let name=document.getElementById('customer').value.trim(),phone=document.getElementById('phone').value.trim(),address=document.getElementById('address').value.trim(),neighborhood=document.getElementById('neighborhood').value,payment=document.getElementById('payment').value;if(!name||!phone||!address||!neighborhood||!payment){alert('Preencha nome, telefone, endereço e forma de pagamento.');return}let total=entries.reduce((s,[id,q])=>s+products.find(p=>p.id==id).price*q,0);let lines=entries.map(([id,q])=>{let p=products.find(x=>x.id==id);return encodeURIComponent(`• ${q}x ${p.name} — ${money(p.price*q)}`)}).join('%0A');let msg=`Olá! Quero fazer um pedido na FATIA 010.%0A%0A${encodeURIComponent(name)}%0ATelefone: ${encodeURIComponent(phone)}%0ABairro: ${encodeURIComponent(neighborhood)}%0AEndereço: ${encodeURIComponent(address)}%0A%0A${lines}%0A%0ATotal: ${encodeURIComponent(money(total))}%0APagamento: ${encodeURIComponent(payment)}%0AObservações: ${encodeURIComponent(document.getElementById('notes').value||'Nenhuma')}`;const whatsappNumber='5592981393889';if(!whatsappNumber){alert('Confira a configuração do WhatsApp da FATIA 010.');return}window.open(`https://wa.me/${whatsappNumber}?text=${msg}`,'_blank')}
-renderProducts();renderCart();
+function renderCart(){
+  const entries=Object.entries(cart);
+  const count=entries.reduce((s,[,q])=>s+q,0);
+  const total=entries.reduce((s,[id,q])=>s+(products.find(p=>p.id==Number(id))?.price||0)*q,0);
+  document.getElementById('count').textContent=count;
+  document.getElementById('total').textContent=money(total);
+  document.getElementById('cartitems').innerHTML=entries.length?entries.map(([id,q])=>{const p=products.find(x=>x.id==Number(id));return `<div class="cartrow"><div><b>${p.name}</b><small>${money(p.price)} cada</small></div><div class="qty"><button onclick="change(${id},-1)">−</button><b>${q}</b><button onclick="change(${id},1)">+</button></div></div>`}).join(''):'<div class="empty">Seu carrinho está vazio.</div>';
+}
+function openCart(){document.getElementById('overlay').classList.add('open')}
+function closeCart(){document.getElementById('overlay').classList.remove('open')}
+async function sendOrder(){
+  const entries=Object.entries(cart);
+  if(!entries.length){alert('Adicione pelo menos um produto ao carrinho.');return;}
+  const name=document.getElementById('customer').value.trim();
+  const phone=document.getElementById('phone').value.trim();
+  const address=document.getElementById('address').value.trim();
+  const neighborhoodId=Number(document.getElementById('neighborhood').value);
+  const paymentMethodId=Number(document.getElementById('payment').value);
+  const notes=document.getElementById('notes').value.trim();
+  if(!name||!phone||!address||!neighborhoodId||!paymentMethodId){alert('Preencha nome, telefone, bairro, endereço e forma de pagamento.');return;}
+  const button=document.querySelector('.checkout button');
+  const originalText=button.textContent;
+  button.disabled=true;button.textContent='Enviando pedido...';
+  try{
+    const response=await fetch(`${API_URL}/api/orders`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        customer:{name,phone},neighborhoodId,paymentMethodId,deliveryAddress:address,notes,
+        items:entries.map(([id,quantity])=>({productId:Number(id),quantity:Number(quantity)}))
+      })
+    });
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(result.error||'Não foi possível registrar seu pedido.');
+    alert(`Pedido recebido com sucesso!\nNúmero do pedido: ${result.order.order_number}\nTotal: ${money(Number(result.order.total))}`);
+    cart={};renderCart();
+    ['customer','phone','address','notes'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('neighborhood').value='';document.getElementById('payment').value='';
+    closeCart();
+  }catch(error){alert(error.message||'Erro ao enviar o pedido. Tente novamente.');}
+  finally{button.disabled=false;button.textContent=originalText;}
+}
+loadCatalog();
 </script></body></html>
